@@ -7,7 +7,7 @@
     <!-- PDF ডাউনলোডের জন্য প্রয়োজনীয় লাইব্রেরি -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.6.0/confetti.browser.min.js"></script>
-    
+
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #74ebd5, #ACB6E5); margin: 0; padding: 20px; min-height: 100vh; }
         .container { max-width: 600px; margin: auto; background: #fff; padding: 25px; border-radius: 20px; box-shadow: 0 8px 25px rgba(0,0,0,0.15); border: 2px solid #3498db; }
@@ -19,11 +19,13 @@
         @keyframes tick { 0% { transform: rotate(0deg);} 50% { transform: rotate(8deg);} 100% { transform: rotate(0deg);} }
         .btn { width: 100%; padding: 15px; background: linear-gradient(135deg, #27ae60, #2ecc71); color: white; border: none; border-radius: 12px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 10px; transition: 0.3s; box-shadow: 0 4px 10px rgba(39,174,96,0.3); }
         .btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         .btn-pdf { background: linear-gradient(135deg, #8e44ad, #9b59b6); box-shadow: 0 4px 10px rgba(142,68,173,0.3); margin-top: 20px; }
         .btn-pdf:hover { filter: brightness(1.05); }
         .result-card { text-align: center; padding: 30px; border: 3px solid #3498db; border-radius: 20px; background: linear-gradient(180deg, #ffffff, #f4faff); position: relative; overflow: hidden; }
         .wrong-ans-box { text-align: left; background: #ffe6e6; padding: 15px; margin-top: 15px; border-left: 5px solid #e74c3c; border-radius: 8px; font-size: 14px; page-break-inside: avoid; }
         .correct-ans-box { text-align: left; background: #e8f8f5; padding: 15px; margin-top: 15px; border-left: 5px solid #27ae60; border-radius: 8px; font-size: 14px; }
+        .pdf-status { text-align: center; font-size: 13px; color: #555; margin-top: 6px; min-height: 18px; }
     </style>
 </head>
 <body>
@@ -58,13 +60,14 @@
             <h3 style="color:#2980b9; font-size: 24px; margin: 10px 0;">স্কোর: <span id="resScore"></span> / <span id="resTotalScore"></span></h3>
             <h2 id="resPercent" style="margin: 5px 0; color: #e67e22;"></h2>
             <p id="feedback" style="font-weight:bold; font-size: 18px;"></p>
-            
+
             <hr style="border: 1px solid #bdc3c7; margin: 25px 0;">
-            
+
             <div id="wrongAnswersContainer"></div>
         </div>
         <!-- ডাউনলোড বাটন (PDF এর বাইরে থাকবে) -->
-        <button class="btn btn-pdf" onclick="downloadResultAsPDF()">📥 রেজাল্ট ও উত্তরপত্র ডাউনলোড করুন (PDF)</button>
+        <button class="btn btn-pdf" id="pdfBtn" onclick="downloadResultAsPDF()">📥 রেজাল্ট ও উত্তরপত্র ডাউনলোড করুন (PDF)</button>
+        <div class="pdf-status" id="pdfStatus"></div>
     </div>
 </div>
 
@@ -72,7 +75,9 @@
     const LOCK_KEY = "examLockUntil_PoliticalScience";       // ট্যাব পরিবর্তন/চিটিং করলে
     const TAKEN_KEY = "examTakenUntil_PoliticalScience";      // স্বাভাবিকভাবে পরীক্ষা জমা দিলে
     const LOCK_DURATION_MS = 30 * 60 * 1000;   // চিটিং করলে ৩০ মিনিট লক
-    const TAKEN_DURATION_MS = 40 * 60 * 1000;  // স্বাভাবিক জমা দিলে ৪০ মিনিট (পরীক্ষার সময়ের সমান) লক, তারপর আবার দেওয়া যাবে
+    const TAKEN_DURATION_MS = 40 * 60 * 1000;  // স্বাভাবিক জমা দিলে ৪০ মিনিট লক, তারপর আবার দেওয়া যাবে
+
+    let examFinished = false; // জমা দেওয়ার পর visibilitychange লক যেন আর না বসে
 
     function showBlockedScreen(message) {
         document.body.innerHTML = "<div style='display:flex; justify-content:center; align-items:center; height:100vh; background:#fdf2f2;'><h2 style='text-align:center; color:#c0392b; font-family:sans-serif; padding: 20px; border: 2px solid #e74c3c; border-radius: 15px; background: #fff;'>" + message + "</h2></div>";
@@ -163,14 +168,14 @@
         const name = document.getElementById('sName').value.trim();
         const sClass = document.getElementById('sClass').value.trim();
         if(!name || !sClass) return alert("দয়া করে আপনার নাম ও শ্রেণি সঠিকভাবে লিখুন!");
-        
+
         document.getElementById('startSection').style.display = 'none';
         document.getElementById('quizSection').style.display = 'block';
-        
+
         // প্রশ্নগুলো রেন্ডম করা
         questions.sort(() => Math.random() - 0.5);
         const container = document.getElementById('questionsContainer');
-        
+
         questions.forEach((q, i) => {
             q.options.sort(() => Math.random() - 0.5);
             let html = `<div class="q-block"><p style="font-size:16px;"><b>${i+1}. ${q.q}</b></p>`;
@@ -179,25 +184,26 @@
             });
             container.innerHTML += html + `</div>`;
         });
-        
+
         let time = 2400; // ৪০ মিনিট
         let timerInt = setInterval(() => {
             time--;
             let min = Math.floor(time/60);
             let sec = time%60;
             document.getElementById('timerText').innerText = "সময়: " + min + ":" + (sec < 10 ? "0" : "") + sec;
-            if(time <= 0) { 
-                clearInterval(timerInt); 
+            if(time <= 0) {
+                clearInterval(timerInt);
                 alert("সময় শেষ! আপনার খাতা স্বয়ংক্রিয়ভাবে জমা দেওয়া হচ্ছে।");
-                submitExam(); 
+                submitExam();
             }
         }, 1000);
-        
+
         // ট্যাব পরিবর্তন করলে পরীক্ষা বাতিল এবং ৩০ মিনিটের জন্য লক
         document.addEventListener("visibilitychange", () => {
-            if(document.hidden) {
+            if(document.hidden && !examFinished) {
                 const lockUntil = Date.now() + LOCK_DURATION_MS;
                 localStorage.setItem(LOCK_KEY, String(lockUntil));
+                examFinished = true;
                 alert("সতর্কবার্তা লঙ্ঘন! ট্যাব পরিবর্তন করার জন্য আপনার পরীক্ষা বাতিল করা হলো। আপনি ৩০ মিনিট পর পুনরায় পরীক্ষায় প্রবেশ করতে পারবেন।");
                 window.location.reload();
             }
@@ -206,7 +212,7 @@
 
     function sendToGoogleSheet(name, sClass, score) {
         // আপনার দেওয়া SheetDB লিংক
-        const apiURL = "https://sheetdb.io/api/v1/i3hrdewqq819o"; 
+        const apiURL = "https://sheetdb.io/api/v1/i3hrdewqq819o";
 
         const timestamp = new Date().toLocaleString("bn-BD", { timeZone: "Asia/Kolkata" });
         const data = {
@@ -236,10 +242,12 @@
     }
 
     function submitExam() {
+        examFinished = true; // visibilitychange লক যেন আর না বসে
+
         // স্বাভাবিকভাবে পরীক্ষা সম্পন্ন হলে ৪০ মিনিটের জন্য লক হবে, এরপর আবার পরীক্ষা দেওয়া যাবে
         localStorage.setItem(TAKEN_KEY, String(Date.now() + TAKEN_DURATION_MS));
         localStorage.removeItem(LOCK_KEY);
-        
+
         let score = 0;
         let wrongAnswersHTML = "<h3 style='color:#2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px; text-align: left;'>উত্তরপত্রের বিশ্লেষণ:</h3>";
         let hasWrong = false;
@@ -247,7 +255,7 @@
         questions.forEach((q, i) => {
             const selected = document.querySelector(`input[name="q${i}"]:checked`);
             let selectedVal = selected ? selected.value : "উত্তর দেননি";
-            
+
             if(selectedVal === q.a) {
                 score++;
             } else {
@@ -273,19 +281,15 @@
         sendToGoogleSheet(name, sClass, finalScore);
 
         let percent = ((score / totalQ) * 100).toFixed(0);
-        
+
         document.getElementById('resName').innerText = name;
         document.getElementById('resClass').innerText = sClass;
         document.getElementById('resScore').innerText = score;
         document.getElementById('resTotalScore').innerText = totalQ;
         document.getElementById('resPercent').innerText = percent + "%";
-        
-        let emoji = percent >= 80 ? "🏆" : (percent >= 60 ? "😊" : "😔");
-        let feedback = percent < 30 ? "ফেল করেছেন! আরও পড়াশোনা করুন।" : (percent >= 80 ? "ভেরি গুড! অসাধারণ পারফরম্যান্স।" : "গুড! আরও ভালো করার সুযোগ আছে।");
-        
-        document.getElementById('emoji').innerText = emoji;
-        document.getElementById('feedback').innerText = feedback;
-        document.getElementById('wrongAnswersContainer').innerHTML = wrongAnswersHTML;
-        
-        document.getElementById('quizSection').style.display = 'none';
-        document.get
+
+        let isPass = percent >= 33; // পাস মার্ক ৩৩%
+        let emoji = percent >= 80 ? "🏆" : (percent >= 60 ? "😊" : (isPass ? "🙂" : "😔"));
+        let feedback = !isPass
+            ? "ফেল করেছেন! আরও পড়াশোনা করুন।"
+       
